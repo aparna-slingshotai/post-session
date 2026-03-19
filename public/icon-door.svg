@@ -1,0 +1,14 @@
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Door" clip-path="url(#clip0_0_20)">
+<g id="Vector">
+</g>
+<path id="Vector_2" d="M9 84H87" stroke="var(--stroke-0, #C59677)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_3" d="M21 84V15C21 14.2044 21.3161 13.4413 21.8787 12.8787C22.4413 12.3161 23.2044 12 24 12H72C72.7956 12 73.5587 12.3161 74.1213 12.8787C74.6839 13.4413 75 14.2044 75 15V84" stroke="var(--stroke-0, #C59677)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_4" d="M58.5 53.25C60.5711 53.25 62.25 51.5711 62.25 49.5C62.25 47.4289 60.5711 45.75 58.5 45.75C56.4289 45.75 54.75 47.4289 54.75 49.5C54.75 51.5711 56.4289 53.25 58.5 53.25Z" fill="var(--fill-0, #C59677)"/>
+</g>
+<defs>
+<clipPath id="clip0_0_20">
+<rect width="96" height="96" fill="white"/>
+</clipPath>
+</defs>
+</svg>

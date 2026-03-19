@@ -1,0 +1,70 @@
+@import url("https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Libertinus+Serif:ital,wght@0,400;0,700;1,400&display=swap");
+@import "tailwindcss";
+
+:root {
+  --surface-bg: #ebe7de;
+  --surface-elevated: #dddad1;
+  --surface-high: #a2a09a;
+
+  --contrast-strong: #1a1918;
+  --contrast-medium: #464543;
+  --contrast-weak: #807e7a;
+  --contrast-subtle: #63615d;
+
+  --wood-50: #f8f2ef;
+  --wood-200: #e9d7cb;
+  --wood-500: #ad7049;
+  --wood-600: #855639;
+  --wood-700: #5f3e28;
+  --wood-800: #352317;
+
+  --olive-50: #f3f5e9;
+  --olive-200: #d9ddb6;
+  --olive-600: #5f652f;
+  --olive-700: #444822;
+
+  --damson-200: #d1ddd7;
+  --damson-500: #648675;
+  --damson-600: #4d675a;
+  --damson-700: #374940;
+  --damson-800: #1f2924;
+
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-pill: 32px;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-bg);
+  color: var(--contrast-strong);
+  font-family: "Google Sans", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  cursor: pointer;
+}
+
+.font-display {
+  font-family: "Libre Baskerville", serif;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out both;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
