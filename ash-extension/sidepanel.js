@@ -1,6 +1,8 @@
 // ─── Ash with Experts — Side Panel Logic ─────────────────────────────────────
 const ASSEMBLYAI_API_KEY = "acb11f85242b4e6a93f2e76bc6b487ba";
 const ASH_APP_URL = "http://localhost:3000";
+// Where your Next.js UI is served from (used to open the post-session chat tab).
+const ASH_UI_URL = "http://localhost:3000";
 
 let mediaRecorder = null;
 let audioChunks = [];
@@ -10,6 +12,7 @@ let transcript = null;
 let activeTabId = null;
 let uploadedFiles = [];
 let thinkingInterval = null;
+let ashSessionsCreatedForTranscript = false;
 
 // ─── DOM refs ────────────────────────────────────────────────────────────────
 
@@ -72,10 +75,12 @@ async function init() {
     showView("processing");
   } else if (state.sessionState === "context") {
     transcript = state.transcript;
+    ashSessionsCreatedForTranscript = !!(state.ashSessionAId && state.ashSessionBId);
     showView("context");
     populateContextView(transcript);
   } else if (state.sessionState === "summary") {
     transcript = state.transcript;
+    ashSessionsCreatedForTranscript = !!(state.ashSessionAId && state.ashSessionBId);
     showView("summary");
     populateSummaryView(transcript, state);
   }
@@ -95,7 +100,11 @@ btnStart.addEventListener("click", async () => {
 
 btnDismiss.addEventListener("click", () => {
   showView("idle");
-  chrome.storage.session.set({ sessionState: "idle" });
+  chrome.storage.session.set({
+    sessionState: "idle",
+    ashSessionAId: null,
+    ashSessionBId: null,
+  });
 });
 
 btnStop.addEventListener("click", () => stopRecording());
@@ -192,6 +201,8 @@ function formatFileSize(bytes) {
 // ─── Recording ───────────────────────────────────────────────────────────────
 
 async function startRecording() {
+  // New recording => allow post-session sessions to be created again.
+  ashSessionsCreatedForTranscript = false;
   try {
     const response = await chrome.runtime.sendMessage({
       type: "START_RECORDING",
@@ -311,7 +322,18 @@ async function handleAudioReady(audioBlob) {
       headers: { authorization: ASSEMBLYAI_API_KEY },
       body: audioBlob,
     });
-    const { upload_url } = await uploadRes.json();
+    if (!uploadRes.ok) {
+      const bodyText = await uploadRes.text().catch(() => "");
+      throw new Error(
+        `AssemblyAI upload failed (${uploadRes.status}): ${bodyText || uploadRes.statusText}`
+      );
+    }
+
+    const uploadJson = await uploadRes.json().catch(() => ({}));
+    const { upload_url } = uploadJson;
+    if (!upload_url) {
+      throw new Error("AssemblyAI upload_url missing from response");
+    }
 
     const transcriptRes = await fetch("https://api.assemblyai.com/v2/transcript", {
       method: "POST",
@@ -325,7 +347,17 @@ async function handleAudioReady(audioBlob) {
         speakers_expected: 2,
       }),
     });
-    const { id: jobId } = await transcriptRes.json();
+    const transcriptJson = await transcriptRes.json().catch(() => ({}));
+    if (!transcriptRes.ok) {
+      throw new Error(
+        `AssemblyAI transcript request failed (${transcriptRes.status}): ${transcriptJson?.error || transcriptJson?.message || "Unknown error"}`
+      );
+    }
+
+    const { id: jobId } = transcriptJson;
+    if (!jobId) {
+      throw new Error("AssemblyAI transcript job id missing from response");
+    }
 
     await pollTranscription(jobId);
   } catch (err) {
@@ -336,12 +368,24 @@ async function handleAudioReady(audioBlob) {
 }
 
 async function pollTranscription(jobId) {
+  if (!jobId) throw new Error("Missing AssemblyAI transcript jobId");
   const poll = async () => {
     const res = await fetch(
       `https://api.assemblyai.com/v2/transcript/${jobId}`,
       { headers: { authorization: ASSEMBLYAI_API_KEY } }
     );
-    const data = await res.json();
+
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => "");
+      throw new Error(
+        `AssemblyAI transcript poll failed (${res.status}): ${bodyText || res.statusText}`
+      );
+    }
+
+    const data = await res.json().catch(() => ({}));
+    if (!data || !data.status) {
+      throw new Error("AssemblyAI transcript poll returned unexpected response");
+    }
 
     if (data.status === "completed") {
       transcript = data;
@@ -351,6 +395,85 @@ async function pollTranscription(jobId) {
         transcript: data,
         sessionState: "context",
       });
+
+      // Pre-create two backend sessions (Speaker A as "You" vs Speaker B as "You"),
+      // so the post-session tab can ask the user which speaker is theirs.
+      // This avoids needing access to extension state from the web page.
+      if (!ashSessionsCreatedForTranscript) {
+        try {
+          const utterances = Array.isArray(data.utterances) ? data.utterances : [];
+          const uniqueSpeakerValues = Array.from(
+            new Set(utterances.map((u) => String(u.speaker)))
+          ).filter(Boolean);
+
+          const speakerAValue = uniqueSpeakerValues[0] ?? null;
+          const speakerBValue = uniqueSpeakerValues[1] ?? null;
+
+          if (!speakerAValue || !speakerBValue) {
+            throw new Error(
+              `Expected at least 2 unique speakers from AssemblyAI, got: ${uniqueSpeakerValues.join(
+                ", "
+              )}`
+            );
+          }
+
+          const labeledForA = utterances.map((u) => ({
+            speaker: String(u.speaker) === speakerAValue ? "You" : "Therapist",
+            text: u.text,
+            start: u.start,
+            end: u.end,
+          }));
+          const labeledForB = utterances.map((u) => ({
+            speaker: String(u.speaker) === speakerBValue ? "You" : "Therapist",
+            text: u.text,
+            start: u.start,
+            end: u.end,
+          }));
+
+          async function createAshSession(labeledTranscript) {
+            const res = await fetch(`${ASH_APP_URL}/api/sessions`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                source: "ash-extension",
+                transcript: labeledTranscript,
+                raw: data.text,
+                recordedAt: new Date().toISOString(),
+              }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              throw new Error(
+                `Backend session create failed (${res.status}): ${json?.error || res.statusText}`
+              );
+            }
+            if (!json.sessionId) {
+              throw new Error("Backend session create missing sessionId");
+            }
+            return json.sessionId;
+          }
+
+          const [sessionAId, sessionBId] = await Promise.all([
+            createAshSession(labeledForA),
+            createAshSession(labeledForB),
+          ]);
+
+          ashSessionsCreatedForTranscript = true;
+          await chrome.storage.session.set({
+            ashSessionAId: sessionAId,
+            ashSessionBId: sessionBId,
+          });
+
+          // Open the post-session flow: confirm which speaker is the user.
+          const url = `${ASH_UI_URL}/post-session/speaker?sessionA=${encodeURIComponent(
+            sessionAId
+          )}&sessionB=${encodeURIComponent(sessionBId)}`;
+          chrome.tabs.create({ url });
+        } catch (err) {
+          console.error("[Ash] Failed to pre-create sessions for post-session chat:", err);
+        }
+      }
+
       chrome.runtime.sendMessage({ type: "TRANSCRIPT_READY", transcript: data });
 
       setTimeout(() => {
@@ -418,10 +541,13 @@ async function generateSummary() {
   showView("processing");
   thinkingBar.style.width = "0%";
 
-  // Push transcript to Ash backend
-  const stored = await chrome.storage.sync.get("userSpeaker");
-  if (transcript && stored.userSpeaker) {
-    await pushTranscriptToAsh(transcript, stored.userSpeaker);
+  // If we've already pre-created post-session sessions (Speaker A/B),
+  // don't push again. The post-session tab will handle speaker selection.
+  if (!ashSessionsCreatedForTranscript) {
+    const stored = await chrome.storage.sync.get("userSpeaker");
+    if (transcript && stored.userSpeaker) {
+      await pushTranscriptToAsh(transcript, stored.userSpeaker);
+    }
   }
 
   // Simulate processing then show summary
